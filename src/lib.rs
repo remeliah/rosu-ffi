@@ -7,15 +7,12 @@ use interoptopus::{
     extra_type, ffi_function, ffi_type, function, patterns::option::FFIOption, Inventory,
     InventoryBuilder,
 };
-use rosu_mods::{
-    serde::GameModSeed, GameMode as RosuGameMode, GameMods as GameModsLazer, 
-    GameModsIntermode, GameModsLegacy,
-};
-use serde::de::{DeserializeSeed, IntoDeserializer};
-use serde_json;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::path::Path;
+
+mod mods;
+use mods::{GameMods, parse_mods};
 
 #[ffi_type]
 #[repr(C)]
@@ -41,114 +38,6 @@ impl CalculatePerformanceResult {
             stars: attributes.stars(),
         }
     }
-}
-
-#[derive(Clone)]
-pub enum GameMods {
-    Legacy(GameModsLegacy),
-    Intermode(GameModsIntermode),
-    Lazer(GameModsLazer),
-}
-
-impl GameMods {
-    fn from_legacy_bits(bits: u32) -> Self {
-        Self::Legacy(GameModsLegacy::from_bits(bits))
-    }
-    
-    fn from_acronyms(acronyms: &str) -> Self {
-        let intermode = GameModsIntermode::from_acronyms(acronyms);
-        
-        match intermode.checked_bits() {
-            Some(bits) => Self::Legacy(GameModsLegacy::from_bits(bits)),
-            None => Self::Intermode(intermode),
-        }
-    }
-
-    fn from_json_str(json_str: &str, mode: GameMode) -> Result<Self, String> {
-        let rosu_mode = match mode {
-            GameMode::Osu => RosuGameMode::Osu,
-            GameMode::Taiko => RosuGameMode::Taiko,
-            GameMode::Catch => RosuGameMode::Catch,
-            GameMode::Mania => RosuGameMode::Mania,
-        };
-        
-        let seed = GameModSeed::Mode {
-            mode: rosu_mode,
-            deny_unknown_fields: false,
-        };
-        
-        if json_str.starts_with('[') {
-            match serde_json::from_str::<Vec<serde_json::Value>>(json_str) {
-                Ok(values) => {
-                    let mut mods = GameModsLazer::new();
-                    
-                    for value in values {
-                        let res = if let Some(acronym) = value.as_str() {
-                            seed.deserialize(serde_json::Value::String(acronym.to_string()).into_deserializer())
-                        } else if let Some(bits) = value.as_u64() {
-                            seed.deserialize(serde_json::Value::Number(serde_json::Number::from(bits)).into_deserializer())
-                        } else {
-                            seed.deserialize(value.into_deserializer())
-                        };
-                        
-                        match res {
-                            Ok(gamemod) => { mods.insert(gamemod); },
-                            Err(e) => return Err(format!("failed to deserialize mod: {}", e)),
-                        }
-                    }
-                    
-                    Ok(Self::Lazer(mods))
-                }
-                Err(e) => Err(format!("invalid JSON array: {}", e)),
-            }
-        } else {
-            match serde_json::from_str::<serde_json::Value>(json_str) {
-                Ok(value) => {
-                    match seed.deserialize(value.into_deserializer()) {
-                        Ok(gamemod) => {
-                            let mut mods = GameModsLazer::new();
-                            mods.insert(gamemod);
-                            Ok(Self::Lazer(mods))
-                        },
-                        Err(e) => Err(format!("failed to deserialize mod: {}", e)),
-                    }
-                }
-                Err(e) => Err(format!("invalid JSON: {}", e)),
-            }
-        }
-    }
-
-    fn to_legacy_bits(&self) -> u32 {
-        match self {
-            Self::Legacy(legacy) => legacy.bits(),
-            Self::Intermode(intermode) => intermode.checked_bits().unwrap_or(0),
-            Self::Lazer(lazer) => lazer.bits(),
-        }
-    }
-}
-
-impl Default for GameMods {
-    fn default() -> Self {
-        Self::Legacy(GameModsLegacy::NoMod)
-    }
-}
-
-fn parse_mods(input: &str, mode: GameMode) -> Result<GameMods, String> {
-    let trim = input.trim();
-    
-    if trim.is_empty() {
-        return Ok(GameMods::default());
-    }
-    
-    if trim.starts_with('[') || trim.starts_with('{') {
-        return GameMods::from_json_str(trim, mode);
-    }
-    
-    if let Ok(bits) = trim.parse::<u32>() {
-        return Ok(GameMods::from_legacy_bits(bits));
-    }
-    
-    Ok(GameMods::from_acronyms(trim))
 }
 
 #[ffi_function]
@@ -313,10 +202,7 @@ mod tests {
         let mods = parse_mods(mod_str, GameMode::Osu).unwrap();
 
         match mods {
-            GameMods::Lazer(m) => {
-                println!("mods: {:?}", m);
-                assert!(m.len() > 0);
-            }
+            GameMods::Lazer(m) => assert!(m.len() > 0),
             _ => panic!("expected lazer mods"),
         }
     }
