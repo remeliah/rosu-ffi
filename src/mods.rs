@@ -1,6 +1,6 @@
 use serde_json;
 use serde::de::{DeserializeSeed, IntoDeserializer};
-use refx_pp::model::mode::GameMode;
+use rosu_pp::model::mode::GameMode;
 
 use rosu_mods::{
     GameMode as RosuGameMode,

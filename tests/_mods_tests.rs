@@ -1,4 +1,4 @@
-use refx_pp::model::mode::GameMode;
+use rosu_pp::model::mode::GameMode;
 
 use rosu_ffi::{calculate_score, mods::{parse_mods, GameMods}};
 use interoptopus::patterns::option::FFIOption;

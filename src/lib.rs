@@ -1,4 +1,4 @@
-use refx_pp::{
+use rosu_pp::{
     Beatmap,
     model::mode::GameMode,
     any::PerformanceAttributes,
